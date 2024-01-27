@@ -1,6 +1,6 @@
 # Code Notes for 3D Gaussian Splatting
 
-This repo contains notes (in Chinese) for the [official implementation](https://github.com/graphdeco-inria/gaussian-splatting) of 3D GS. We suggest that you read our [survey](https://arxiv.org/abs/2401.03890) to gain a comprehensive understanding of 3D Gaussian Splatting.
+This repo contains notes (in Chinese) for the [official implementation](https://github.com/graphdeco-inria/gaussian-splatting) of 3D GS. We suggest you read our [survey](https://arxiv.org/abs/2401.03890) and [Zhihu](https://zhuanlan.zhihu.com/p/678877999) to gain a comprehensive understanding of 3D Gaussian Splatting.
 
 [A Survey on 3D Gaussian Splatting](https://arxiv.org/abs/2401.03890) (https://arxiv.org/pdf/2401.03890.pdf)
 
