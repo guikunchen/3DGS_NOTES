@@ -272,6 +272,7 @@ int CudaRasterizer::Rasterizer::forward(  // 可以把这个当成 main 函数
 		prefiltered
 	), debug)
 
+	// ---开始--- 通过视图变换 W 计算出像素与所有重叠高斯的距离，即这些高斯的深度，形成一个有序的高斯列表
 	// Compute prefix sum over full list of touched tile counts by Gaussians
 	// E.g., [2, 3, 0, 2, 1] -> [2, 5, 5, 7, 8]
 	CHECK_CUDA(cub::DeviceScan::InclusiveSum(geomState.scanning_space, geomState.scan_size, geomState.tiles_touched, geomState.point_offsets, P), debug)
@@ -286,7 +287,7 @@ int CudaRasterizer::Rasterizer::forward(  // 可以把这个当成 main 函数
 
 	// For each instance to be rendered, produce adequate [ tile | depth ] key 
 	// and corresponding dublicated Gaussian indices to be sorted
-	duplicateWithKeys << <(P + 255) / 256, 256 >> > (
+	duplicateWithKeys << <(P + 255) / 256, 256 >> > (  // 根据 tile，复制 Gaussian
 		P,
 		geomState.means2D,
 		geomState.depths,
@@ -300,7 +301,7 @@ int CudaRasterizer::Rasterizer::forward(  // 可以把这个当成 main 函数
 	int bit = getHigherMsb(tile_grid.x * tile_grid.y);
 
 	// Sort complete list of (duplicated) Gaussian indices by keys
-	CHECK_CUDA(cub::DeviceRadixSort::SortPairs(
+	CHECK_CUDA(cub::DeviceRadixSort::SortPairs( // 对复制后的所有 Gaussians 进行排序，排序的结果可供平行化渲染使用
 		binningState.list_sorting_space,
 		binningState.sorting_size,
 		binningState.point_list_keys_unsorted, binningState.point_list_keys,
@@ -311,15 +312,16 @@ int CudaRasterizer::Rasterizer::forward(  // 可以把这个当成 main 函数
 
 	// Identify start and end of per-tile workloads in sorted list
 	if (num_rendered > 0)
-		identifyTileRanges << <(num_rendered + 255) / 256, 256 >> > (
+		identifyTileRanges << <(num_rendered + 255) / 256, 256 >> > (  // 根据有序的Gaussian列表，判断每个 tile 需要跟哪一个 range 内的 Gaussians 进行计算
 			num_rendered,
 			binningState.point_list_keys,
 			imgState.ranges);
 	CHECK_CUDA(, debug)
+	// ---结束--- 通过视图变换 W 计算出像素与所有重叠高斯的距离，即这些高斯的深度，形成一个有序的高斯列表
 
 	// Let each tile blend its range of Gaussians independently in parallel
 	const float* feature_ptr = colors_precomp != nullptr ? colors_precomp : geomState.rgb;
-	CHECK_CUDA(FORWARD::render(
+	CHECK_CUDA(FORWARD::render(  // 核心渲染函数，具体实现在 forward.cu/renderCUDA
 		tile_grid, block,
 		imgState.ranges,
 		binningState.point_list,

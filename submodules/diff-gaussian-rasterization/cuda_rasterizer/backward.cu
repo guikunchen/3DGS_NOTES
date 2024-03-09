@@ -437,7 +437,7 @@ renderCUDA(
 	__shared__ float collected_colors[C * BLOCK_SIZE];
 
 	// In the forward, we stored the final value for T, the
-	// product of all (1 - alpha) factors. 
+	// product of all (1 - alpha) factors.  核心就是根据alpha合成的公式，手推每个变量的反向传播公式，推导过程可参考论文里的附录。
 	const float T_final = inside ? final_Ts[pix_id] : 0;
 	float T = T_final;
 

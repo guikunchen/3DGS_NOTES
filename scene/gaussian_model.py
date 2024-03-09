@@ -44,18 +44,18 @@ class GaussianModel:
     def __init__(self, sh_degree : int):
         self.active_sh_degree = 0
         self.max_sh_degree = sh_degree  
-        self._xyz = torch.empty(0)
+        self._xyz = torch.empty(0)  # 每个 Gaussian 的中心位置
         self._features_dc = torch.empty(0)  # SH的常量
         self._features_rest = torch.empty(0)  # SH除了常量以外的部分
-        self._scaling = torch.empty(0)
+        self._scaling = torch.empty(0)  # 使用该行的缩放和下一行的旋转来表示椭球
         self._rotation = torch.empty(0)
-        self._opacity = torch.empty(0)
-        self.max_radii2D = torch.empty(0)
-        self.xyz_gradient_accum = torch.empty(0)
-        self.denom = torch.empty(0)
+        self._opacity = torch.empty(0)  # 不透明度
+        self.max_radii2D = torch.empty(0)  # 2D半径
+        self.xyz_gradient_accum = torch.empty(0)  # 梯度累积的值，用于优化过程（如剪枝）
+        self.denom = torch.empty(0)  # grads = self.xyz_gradient_accum / self.denom
         self.optimizer = None
-        self.percent_dense = 0
-        self.spatial_lr_scale = 0
+        self.percent_dense = 0  # 用于得到阈值，决定 split/clone
+        self.spatial_lr_scale = 0  # 位置的 lr 和其他参数的 lr 不同
         self.setup_functions()
 
     def capture(self):
@@ -346,21 +346,22 @@ class GaussianModel:
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
-    def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
+    def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):  # 在重建过度的区域拆分大高斯
         n_init_points = self.get_xyz.shape[0]
         # Extract points that satisfy the gradient condition
         padded_grad = torch.zeros((n_init_points), device="cuda")
         padded_grad[:grads.shape[0]] = grads.squeeze()
-        selected_pts_mask = torch.where(padded_grad >= grad_threshold, True, False)
+        selected_pts_mask = torch.where(padded_grad >= grad_threshold, True, False)  # 视图空间位置的梯度过大
         selected_pts_mask = torch.logical_and(selected_pts_mask,
                                               torch.max(self.get_scaling, dim=1).values > self.percent_dense*scene_extent)
 
+        # 对于分割，则是用两个较小的高斯替换一个较大的高斯，将其比例缩小一个特定的系数
         stds = self.get_scaling[selected_pts_mask].repeat(N,1)
         means =torch.zeros((stds.size(0), 3),device="cuda")
         samples = torch.normal(mean=means, std=stds)
         rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N,1,1)
         new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
-        new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask].repeat(N,1) / (0.8*N))
+        new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask].repeat(N,1) / (0.8*N))  # / (0.8*N) <-> 将其比例缩小一个特定的系数
         new_rotation = self._rotation[selected_pts_mask].repeat(N,1)
         new_features_dc = self._features_dc[selected_pts_mask].repeat(N,1,1)
         new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1)
@@ -371,12 +372,13 @@ class GaussianModel:
         prune_filter = torch.cat((selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
         self.prune_points(prune_filter)
 
-    def densify_and_clone(self, grads, grad_threshold, scene_extent):
+    def densify_and_clone(self, grads, grad_threshold, scene_extent):  # 在重建不足的区域克隆小高斯
         # Extract points that satisfy the gradient condition
         selected_pts_mask = torch.where(torch.norm(grads, dim=-1) >= grad_threshold, True, False)
         selected_pts_mask = torch.logical_and(selected_pts_mask,
                                               torch.max(self.get_scaling, dim=1).values <= self.percent_dense*scene_extent)
         
+        # 克隆时，创建一个高斯的副本，并向位置梯度移动
         new_xyz = self._xyz[selected_pts_mask]
         new_features_dc = self._features_dc[selected_pts_mask]
         new_features_rest = self._features_rest[selected_pts_mask]
@@ -393,10 +395,10 @@ class GaussianModel:
         self.densify_and_clone(grads, max_grad, extent)
         self.densify_and_split(grads, max_grad, extent)
 
-        prune_mask = (self.get_opacity < min_opacity).squeeze()
+        prune_mask = (self.get_opacity < min_opacity).squeeze()  # 剔除几乎透明的高斯（ 低于指定阈值 ）
         if max_screen_size:  # 判断是否是 None
-            big_points_vs = self.max_radii2D > max_screen_size
-            big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
+            big_points_vs = self.max_radii2D > max_screen_size  # 在视图空间中过大
+            big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent  # 在世界空间中过大
             prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
         self.prune_points(prune_mask)
 

@@ -188,12 +188,12 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	radii[idx] = 0;
 	tiles_touched[idx] = 0;
 
-	// Perform near culling, quit if outside.
+	// Perform near culling, quit if outside. 给定指定的相机姿势，此步骤确定哪些3D高斯位于相机的视锥体之外。这样做可以确保在后续计算中不涉及给定视图之外的3D高斯，从而节省计算资源。
 	float3 p_view;
 	if (!in_frustum(idx, orig_points, viewmatrix, projmatrix, prefiltered, p_view))
 		return;
 
-	// Transform point by projecting
+	// Transform point by projecting  以下代码将3D高斯（椭球）被投影到2D图像空间（椭圆），存储必要的变量供后续渲染使用
 	float3 p_orig = { orig_points[3 * idx], orig_points[3 * idx + 1], orig_points[3 * idx + 2] };
 	float4 p_hom = transformPoint4x4(p_orig, projmatrix);
 	float p_w = 1.0f / (p_hom.w + 0.0000001f);
@@ -251,7 +251,7 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	radii[idx] = my_radius;
 	points_xy_image[idx] = point_image;
 	// Inverse 2D covariance and opacity neatly pack into one float4
-	conic_opacity[idx] = { conic.x, conic.y, conic.z, opacities[idx] };
+	conic_opacity[idx] = { conic.x, conic.y, conic.z, opacities[idx] };  // 前三个将被用于计算高斯的指数部分从而得到 prob（查询点到该高斯的距离->prob，例如，若查询点位于该高斯的中心则 prob 为 1）。最后一个是该高斯本身的密度。
 	tiles_touched[idx] = (rect_max.y - rect_min.y) * (rect_max.x - rect_min.x);
 }
 
@@ -343,7 +343,7 @@ renderCUDA(
 			float alpha = min(0.99f, con_o.w * exp(power));  // opacity * 像素点出现在这个高斯的几率
 			if (alpha < 1.0f / 255.0f)  // 太小了就当成透明的
 				continue;
-			float test_T = T * (1 - alpha);
+			float test_T = T * (1 - alpha);  // alpha合成的系数
 			if (test_T < 0.0001f)  // 累乘不透明度到一定的值，标记这个像素的渲染结束
 			{
 				done = true;

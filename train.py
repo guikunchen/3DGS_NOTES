@@ -120,7 +120,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
                 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
-                    gaussians.reset_opacity()  # 重置不透明度
+                    gaussians.reset_opacity()  # 为了防止输入摄像头附近的高斯密度出现不合理的增加，在迭代一定次数后，高斯的不透明度会被设置为接近于零
 
             # Optimizer step
             if iteration < opt.iterations:
