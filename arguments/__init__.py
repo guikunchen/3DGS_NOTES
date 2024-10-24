@@ -16,7 +16,7 @@ import os
 class GroupParams:
     pass
 
-class ParamGroup:
+class ParamGroup: # Base class for all parameter groups
     def __init__(self, parser: ArgumentParser, name : str, fill_none = False):
         group = parser.add_argument_group(name)
         for key, value in vars(self).items():
@@ -44,7 +44,7 @@ class ParamGroup:
                 setattr(group, arg[0], arg[1])
         return group
 
-class ModelParams(ParamGroup): 
+class ModelParams(ParamGroup):  # 模型参数，比如球谐函数阶数、模型路径等
     def __init__(self, parser, sentinel=False):
         self.sh_degree = 3
         self._source_path = ""
@@ -56,19 +56,19 @@ class ModelParams(ParamGroup):
         self.eval = False
         super().__init__(parser, "Loading Parameters", sentinel)
 
-    def extract(self, args):
+    def extract(self, args): # Override extract to make sure paths are absolute
         g = super().extract(args)
         g.source_path = os.path.abspath(g.source_path)
         return g
 
-class PipelineParams(ParamGroup):
+class PipelineParams(ParamGroup): # Pipeline 参数，指定是否使用 python 实现的 SH 转换和 3D 协方差计算，以及是否开启 debug
     def __init__(self, parser):
         self.convert_SHs_python = False
         self.compute_cov3D_python = False
         self.debug = False
         super().__init__(parser, "Pipeline Parameters")
 
-class OptimizationParams(ParamGroup):
+class OptimizationParams(ParamGroup): # 模型优化参数，各种学习率、迭代次数等
     def __init__(self, parser):
         self.iterations = 30_000
         self.position_lr_init = 0.00016
@@ -80,7 +80,7 @@ class OptimizationParams(ParamGroup):
         self.scaling_lr = 0.005
         self.rotation_lr = 0.001
         self.percent_dense = 0.01
-        self.lambda_dssim = 0.2
+        self.lambda_dssim = 0.2     # 损失函数公式中的 lambda
         self.densification_interval = 100
         self.opacity_reset_interval = 3000
         self.densify_from_iter = 500

@@ -83,7 +83,7 @@ class _RasterizeGaussians(torch.autograd.Function):
         if raster_settings.debug:
             cpu_args = cpu_deep_copy_tuple(args) # Copy them before they can be corrupted
             try:
-                num_rendered, color, radii, geomBuffer, binningBuffer, imgBuffer = _C.rasterize_gaussians(*args)
+                num_rendered, color, radii, geomBuffer, binningBuffer, imgBuffer = _C.rasterize_gaussians(*args) # 核心函数，调 submodules/diff-gaussian-rasterization/rasterize_points.cu 里的 RasterizeGaussiansCUDA
             except Exception as ex:
                 torch.save(cpu_args, "snapshot_fw.dump")
                 print("\nAn error occured in forward. Please forward snapshot_fw.dump for debugging.")
@@ -95,11 +95,11 @@ class _RasterizeGaussians(torch.autograd.Function):
         ctx.raster_settings = raster_settings
         ctx.num_rendered = num_rendered
         ctx.save_for_backward(colors_precomp, means3D, scales, rotations, cov3Ds_precomp, radii, sh, geomBuffer, binningBuffer, imgBuffer)
-        
+
         return color, radii
 
     @staticmethod
-    def backward(ctx, grad_out_color, _):
+    def backward(ctx, grad_out_color, _): # Pytorch 自定义反向传播，参数是最终损失函数对前向传播的返回值求导的结果，即 grad_color, grad_radii
 
         # Restore necessary values from context
         num_rendered = ctx.num_rendered
@@ -133,15 +133,15 @@ class _RasterizeGaussians(torch.autograd.Function):
         if raster_settings.debug:
             cpu_args = cpu_deep_copy_tuple(args) # Copy them before they can be corrupted
             try:
-                grad_means2D, grad_colors_precomp, grad_opacities, grad_means3D, grad_cov3Ds_precomp, grad_sh, grad_scales, grad_rotations = _C.rasterize_gaussians_backward(*args)
+                grad_means2D, grad_colors_precomp, grad_opacities, grad_means3D, grad_cov3Ds_precomp, grad_sh, grad_scales, grad_rotations = _C.rasterize_gaussians_backward(*args) # 核心函数，调 submodules/diff-gaussian-rasterization/rasterize_points.cu 里的 RasterizeGaussiansBackwardCUDA
             except Exception as ex:
                 torch.save(cpu_args, "snapshot_bw.dump")
                 print("\nAn error occured in backward. Writing snapshot_bw.dump for debugging.\n")
                 raise ex
         else:
-             grad_means2D, grad_colors_precomp, grad_opacities, grad_means3D, grad_cov3Ds_precomp, grad_sh, grad_scales, grad_rotations = _C.rasterize_gaussians_backward(*args)
+            grad_means2D, grad_colors_precomp, grad_opacities, grad_means3D, grad_cov3Ds_precomp, grad_sh, grad_scales, grad_rotations = _C.rasterize_gaussians_backward(*args) 
 
-        grads = (
+        grads = (  # Pytorch 自定义反向传播，返回值必须跟前向传播一一对应
             grad_means3D,
             grad_means2D,
             grad_sh,
@@ -150,7 +150,7 @@ class _RasterizeGaussians(torch.autograd.Function):
             grad_scales,
             grad_rotations,
             grad_cov3Ds_precomp,
-            None,
+            None, # raster_settings 不用梯度
         )
 
         return grads
@@ -169,7 +169,7 @@ class GaussianRasterizationSettings(NamedTuple):
     prefiltered : bool
     debug : bool
 
-class GaussianRasterizer(nn.Module):
+class GaussianRasterizer(nn.Module): # 对 CUDA rasterizer 做一下封装，内部调用的 CUDA 实现
     def __init__(self, raster_settings):
         super().__init__()
         self.raster_settings = raster_settings
