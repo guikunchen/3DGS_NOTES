@@ -40,7 +40,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         tanfovy=tanfovy,
         bg=bg_color,
         scale_modifier=scaling_modifier,
-        viewmatrix=viewpoint_camera.world_view_transform,  #   https://blog.csdn.net/nice_xp/article/details/83757486
+        viewmatrix=viewpoint_camera.world_view_transform,  # https://blog.csdn.net/nice_xp/article/details/83757486
         projmatrix=viewpoint_camera.full_proj_transform,
         sh_degree=pc.active_sh_degree,
         campos=viewpoint_camera.camera_center,
@@ -48,7 +48,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         debug=pipe.debug
     )
 
-    rasterizer = GaussianRasterizer(raster_settings=raster_settings)
+    rasterizer = GaussianRasterizer(raster_settings=raster_settings) # 光栅化器设置
 
     means3D = pc.get_xyz
     means2D = screenspace_points
@@ -81,8 +81,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     else:
         colors_precomp = override_color
 
-    # Rasterize visible Gaussians to image, obtain their radii (on screen). 
-    rendered_image, radii = rasterizer(
+    # Rasterize visible Gaussians to image, obtain their radii (on screen).
+    rendered_image, radii = rasterizer( # 核心代码！调 submodules/diff-gaussian-rasterization/diff_gaussian_rasterization/__init__.py 的 forward()
         means3D = means3D,
         means2D = means2D,
         shs = shs,
@@ -94,6 +94,13 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
+    # render: result image in RGB, H * W * 3
+    # viewspace_points: 前面把它浅拷贝给 means2D，把 means2D 送入 rasterizer，但观察它前向过程根本就没有用到这个参数
+    #                   它实际上是个 “值始终为空，但在反向过程中计算了 grad” 的变量，外面使用它的时候只会访问它的 grad
+    #                   它的 grad 是个 shape 为 (P, 3) 的 tensor，表示最终 loss 对每个高斯在 viewspace xyz 上的梯度
+    #                   之所以这么做应该是因为这玩意儿是个“非叶节点”，其梯度不会被 Pytorch 保持，需要自己 retain_grad()？
+    # visibility_filter: P 个 boolean 值
+    # radii: 每个 Gaussion（共 P 个）在 image 上估算为圆的半径
     return {"render": rendered_image,
             "viewspace_points": screenspace_points,
             "visibility_filter" : radii > 0,
